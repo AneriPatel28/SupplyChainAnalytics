@@ -1,0 +1,532 @@
+---
+title: "Predictive Analytics in Supply Chain Management: A Classification Model for Assessing Delivery Timeliness"
+output: 
+  html_document:
+    code_folding: hide
+date: "2023-12-12"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Introduction
+
+In today's competitive market, the ability to predict delivery times accurately is crucial for the success of supply chain operations. This report introduces a robust classification model, leveraging predictive analytics to determine whether products will be delivered on time, thereby enhancing efficiency and customer satisfaction in supply chain management
+
+### Background
+
+* Predicting delivery times accurately is a tough task for businesses. When deliveries don't arrive as planned, customers can become dissatisfied, and businesses often have to compensate them with refunds or discounts. This not only costs money but can also disrupt their inventory management. 
+
+* The traditional methods of predicting delivery times aren't always reliable, especially when unexpected issues occur. By using various machine learning algorithms, we can build a model that predicts whether a product will be delivered on time or not.
+
+* This approach helps businesses improve their predictions about delivery times, which in turn keeps customers happier, reduces costs, and makes the whole supply chain run more efficiently.
+
+### Purpose of the Report
+
+This report presents a comprehensive summary of our project, which involved developing a classification model using predictive analytics to accurately forecast whether a product will be delivered on time or experience delays.
+
+# Data Pre-processing
+
+```{r,results='markup'}
+data= read.csv('DataCoSupplyChainDataset.csv')
+head(data,1)
+```
+```{r,results='markup'}
+str(data)
+```
+
+```{r,results='markup'}
+data$`Customer.Full.Name` <- paste(data$`Customer.Fname`, data$`Customer.Lname`)
+```
+
+
+```{r,results='markup'}
+colSums(is.na(data))
+```
+
+```{r,results='markup'}
+data$Customer.Email <- NULL
+data$Customer.Password <- NULL
+data$Order.Zipcode <-NULL
+data$Product.Description <- NULL
+data$Product.Image<-NULL
+data$order.date..DateOrders. <- NULL
+data$shipping.date..DateOrders.<- NULL
+data$Customer.Fname <- NULL
+data$Customer.Lname <- NULL
+data$Product.Status <-NULL
+data$Customer.Street <- NULL
+data$Latitude<- NULL
+data$Longitude <- NULL
+data <- na.omit(data)
+```
+
+```{r,results='markup'}
+value_counts <- table(data$Late_delivery_risk)
+```
+
+```{r, results='markup'}
+library(corrplot)
+
+numeric_data <- data[, sapply(data, is.numeric)]
+cor_matrix <- cor(numeric_data)
+
+corrplot(cor_matrix, method = "color", type = "upper", order = "hclust", tl.col = "black", tl.srt = 45,number.cex = 0.4,tl.cex = 0.5,addCoef.col = "black")
+```
+
+
+Based on the insights from the correlation matrix, it's evident that columns such as Order.Item.Product.Price, Sales.per.customer, Order.Item.Total, Order.customer.Id, and Order.Profit.Per.Order are repetitive. Therefore, these columns have been removed from the analysis.
+
+```{r, results='markup'}
+
+data$Order.Item.Product.Price <- NULL
+data$Sales.per.customer <- NULL
+data$Order.Item.Total <- NULL
+data$Order.Customer.Id <- NULL
+data$Order.Item.Id <- NULL
+data$Order.Profit.Per.Order <- NULL
+```
+
+```{r, results='markup'}
+numeric_data <- data[, sapply(data, is.numeric)]
+cor_matrix <- cor(numeric_data)
+corrplot(cor_matrix, method = "color", type = "upper", order = "hclust", tl.col = "black", tl.srt = 45,number.cex = 0.4,tl.cex = 0.5,addCoef.col = "black")
+```
+
+# EDA
+
+#Distribution of payment methods
+
+```{r,results='markup'}
+library(ggplot2)
+library(dplyr)
+
+custom_colors <- c("#414487ff", "#2a788eff", "#7ad151ff", "#fde725ff")
+
+category_counts <- table(data$Type)
+percentage <- round((category_counts / sum(category_counts)) * 100, 2)
+
+pie_data <- data.frame(
+  category = names(category_counts),
+  count = as.numeric(category_counts),
+  percentage = percentage
+)
+
+pie_chart <- ggplot(pie_data, aes(x = "", y = count, fill = category)) +
+  geom_bar(stat = "identity", width = 1, color = "black") +
+  coord_polar("y", start = 0) +
+  theme_minimal() +
+  theme(
+    axis.text = element_blank(),
+    axis.title = element_blank(),
+    panel.grid = element_blank(),
+    plot.title = element_text(hjust = 0.5, size = 18)
+  ) +
+  geom_text(aes(label = paste(category, "\n", percentage, "%")), 
+            position = position_stack(vjust = 0.5), 
+            color = "black", size = 3) +
+  scale_fill_manual(values = custom_colors) +
+  ggtitle("Distribution of Different Payment Methods")
+
+print(pie_chart)
+```
+
+From the figure, we can extrapolate that debit payments are the predominant method, accounting for over a third of all transactions. Electronic transfers also represent a significant portion, indicating a preference for cashless transactions. Cash payments, while still used, constitute the smallest share, suggesting a lesser role in the current payment landscape
+
+#Total sales across markets
+
+```{r, results='markup'}
+market <- data %>% group_by(Market)
+
+region <- data %>% group_by(`Order.Region`)
+
+plot_market <- market %>% summarise(total_sales = sum(`Sales`)) %>%
+  arrange(desc(total_sales)) %>%
+  ggplot(aes(x = reorder(Market, -total_sales), y = total_sales)) +
+  geom_bar(stat = "identity", fill = viridis::viridis(length(unique(market$Market)))) +
+  
+  labs(title = "Total Sales for all Markets", x = "Market", y = "Total Sales") +
+  theme_minimal()
+print(plot_market)
+```
+
+The bar chart indicates that Europe has the highest overall sales, while Africa shows the lowest total sales. Based on this observation, a new company looking to enter the market might consider prioritizing the European market over Africa.
+
+
+#Total sales across regions
+
+```{r,results='markup'}
+
+plot_region <- region %>% summarise(total_sales = sum(`Sales`)) %>%
+  arrange(desc(total_sales)) %>%
+  ggplot(aes(x = reorder(`Order.Region`, -total_sales), y = total_sales)) +
+  geom_bar(stat = "identity", fill = viridis::viridis(length(unique(region$`Order.Region`))), option = "D") +
+  labs(title = "Total Sales for all Regions", x = "Order Region", y = "Total Sales") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+print(plot_region)
+```
+
+The bar chart illustrates that Western Europe and Central America top the list in terms of total sales by region, while Southern Africa, Canada, and the Central Asia region display the lowest sales. Consequently, emerging companies aiming to enter the market are advised to prioritize regions with the most significant sales figures.
+
+#Highest selling products categories 
+
+```{r, results='markup'}
+library(viridis)
+
+total_sales_per_category <- data %>%
+  group_by(Category.Name) %>%
+  summarize(Total.Sales = sum(Sales)) %>%
+  arrange(desc(Total.Sales))
+
+
+top_10_categories <- head(total_sales_per_category, 10)
+
+
+ggplot(top_10_categories, aes(x = reorder(Category.Name, Total.Sales), y = Total.Sales / 1e6)) + 
+  geom_bar(stat = "identity", fill = viridis(10)) +
+  coord_flip() + 
+  labs(title = "Top Performers: Highest-Selling Product Categories",
+       x = "Categories",
+       y = "Total Sales (in Millions)") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(angle = 0, hjust = 1)) + 
+  scale_y_continuous(breaks = c(0, 2, 4, 6), labels = c("0", "2", "4", "6")) 
+
+```
+
+The chart reveals a strong market preference for outdoor and fitness-related products, with Fishing leading, while the Computers category shows minimal sales, indicating a potential area for improvement or re-evaluation.
+
+#Top 10 products with most loss
+
+```{r, results='markup'}
+
+viridis_palette_1 <- c("#440154", "#482777", "#3F4A8A", "#31688E", "#26838F", "#1F9D8A", "#6CDB82", "#FDE725", "#B8D75A", "#92BF5D")
+
+viridis_palette_2 <- c("#440154", "#48186A", "#472D7B", "#3C4D8A", "#33638D", "#2C7F8E", "#33A186", "#9FDF6A", "#FEE08B", "#FDAE61")
+
+loss <- data[data$`Benefit.per.order` < 0, ]
+ 
+plot_top_products <- loss %>%
+  count(`Category.Name`) %>%
+  arrange(desc(n)) %>%
+  head(10) %>%
+  ggplot(aes(x = reorder(`Category.Name`, -n), y = n)) +
+  geom_bar(stat = "identity", fill = viridis_palette_1) +
+  labs(title = "Products with Most Loss",
+       x = "Category Name",
+       y = "Number of Orders with Loss") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+# Top 10 regions with most loss
+
+```{r, results='markup'}
+plot_top_regions <- loss %>%
+  count(`Order.Region`) %>%
+  arrange(desc(n)) %>%
+  head(10) %>%
+  ggplot(aes(x = reorder(`Order.Region`, -n), y = n)) +
+  geom_bar(stat = "identity", fill = viridis_palette_2) +
+  labs(title = "Regions with Most Loss",
+       x = "Order Region",
+       y = "Number of Orders with Loss") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+cat("Total revenue lost with orders:", sum(loss$`Benefit.per.order`), "\n")
+
+print(plot_top_products)
+```
+
+The bar chart shows that product categories related to clothing and footwear, specifically Cleats, Men's Footwear, and Women's Apparel, have the greatest number of orders that have resulted in losses, hinting at possible challenges in product satisfaction, return rates, or quality.
+
+On the other hand, the Electronics category has the smallest number of loss-making orders, possibly indicating better performance in terms of customer satisfaction or return management.
+
+
+```{r,results='markup'}
+print(plot_top_regions)
+```
+
+Central America and Western Europe top the chart for the number of loss-incurred orders, indicating potential issues in supply chain, customer satisfaction, or market dynamics in these regions. In contrast, South Asia shows the lowest number of loss-making orders, which could reflect more efficient operations or a better market fit for the products sold there.
+
+#Average Sales for all Categories
+
+```{r, results='markup'}
+category <- data %>% group_by(`Category.Name`)
+
+plot_average_sales <- category %>%
+  summarise(average_sales = mean(`Sales`)) %>%
+  arrange(desc(average_sales)) %>%
+  ggplot(aes(x = reorder(`Category.Name`, -average_sales), y = average_sales)) +
+  geom_bar(stat = "identity", fill = "#0072b2") +
+  labs(title = "Average Sales for all Categories", x = "Category Name", y = "Average Sales") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+print(plot_average_sales)
+```
+The bar chart indicates that computers tops the list in terms of average sales, demonstrating a notable lead over other categories. Toys and CDs appear to have lower average sales compared to the leading category, suggesting potential areas for improvement and strategic focus.
+
+# Customer Segments Distribution
+
+```{r, results='markup'}
+segment_palette <- c("#482777", "#31688E", "#1F9D8A")
+ggplot(data, aes(x = reorder(Customer.Segment, -Sales), fill = Customer.Segment)) +
+  geom_bar() +
+  labs(title = "Distribution of Customer Segments", x = "Customer Segment", y = "Number of customers") +
+  theme_minimal()+
+  theme(plot.title = element_text(hjust = 0.5))+
+  scale_fill_manual(values = segment_palette)
+
+```
+The bar chart illustrates a substantial customer base in the "Consumer" segment, surpassing "Corporate" and "Home Office." This indicates a consumer-focused market presence, suggesting potential for tailored strategies. Consideration of these segment sizes can inform effective marketing and business decisions.
+
+
+# Order Status Distribution
+
+```{r, results='markup'}
+library(viridis)
+library(ggplot2)
+
+ggplot(data, aes(x = Order.Status, fill = Order.Status)) +
+  geom_bar() +
+  scale_fill_viridis(discrete = TRUE) +  # Use viridis color palette
+  labs(title = "Distribution of Order Statuses", x = "Order Status", y = "Count") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))  # Rotate x-axis labels vertically
+```
+The following graph shows the distribution of order in terms of statuses. The order statuses with COMPLETE has the highest distribution followed by PENDING_PAYMENT. Whereas CANCELLED,PAYMENT_REVIEW, and SUSPECTED_FRAUD has the least amount of distribution.
+
+# Delivery Status Distribution
+
+```{r,results='markup'}
+
+ggplot(data, aes(x = Delivery.Status, fill = Delivery.Status)) +
+  geom_bar() +
+  scale_fill_viridis(discrete = TRUE) +  # Use viridis color palette
+  labs(title = "Distribution of Delivery Statuses", x = "Delivery Status", y = "Count") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))  # Rotate x-axis labels vertically
+```
+The following graph shows the distribution of delivery status , i.e. , either the product is shipped in advance, on time, late or is it cancelled. One can infer from the graph that orders being delivered late has the highest amount of distribution, followed by orders shipped in advance. Orders that are cancelled has the least distribution.
+
+# Model Building
+
+To determine the best model for predicting on-time product delivery, we first analyzed the problem's binary classification nature and the data's features, applying appropriate encoding techniques.
+
+Logistic Regression, KNN, and Naive Bayes models were then trained, with their performance being evaluated using metrics such as accuracy, recall and F1-score. The final model selection was based on a balance of accuracy, interpretability, and computational efficiency, with adjustments made through hyperparameter tuning to optimize performance.
+
+```{r,results='markup'}
+library(forcats)
+library(dplyr)
+library(caret)
+```
+
+```{r,results='markup'}
+train_data <- data
+train_data$fraud <- ifelse(train_data$`Order.Status` == 'SUSPECTED_FRAUD', 1, 0)
+train_data$late_delivery <- ifelse(train_data$`Delivery.Status` == 'Late delivery', 1, 0)
+
+
+train_data <- train_data %>%
+  select(-Delivery.Status, -Late_delivery_risk, -Order.Status)
+
+train_data <- train_data %>%
+  mutate(
+    `Customer.Country` = as.integer(fct_recode(as_factor(`Customer.Country`), .default = "NA")),
+    Market = as.integer(fct_recode(as_factor(Market), .default = "NA")),
+    Type = as.integer(fct_recode(as_factor(Type), .default = "NA")),
+    `Product.Name` = as.integer(fct_recode(as_factor(`Product.Name`), .default = "NA")),
+    `Customer.Segment` = as.integer(fct_recode(as_factor(`Customer.Segment`), .default = "NA")),
+    `Customer.State` = as.integer(fct_recode(as_factor(`Customer.State`), .default = "NA")),
+    `Order.Region` = as.integer(fct_recode(as_factor(`Order.Region`), .default = "NA")),
+    `Order.City` = as.integer(fct_recode(as_factor(`Order.City`), .default = "NA")),
+    `Category.Name` = as.integer(fct_recode(as_factor(`Category.Name`), .default = "NA")),
+    `Customer.City` = as.integer(fct_recode(as_factor(`Customer.City`), .default = "NA")),
+    `Department.Name` = as.integer(fct_recode(as_factor(`Department.Name`), .default = "NA")),
+    `Order.State` = as.integer(fct_recode(as_factor(`Order.State`), .default = "NA")),
+    `Shipping.Mode` = as.integer(fct_recode(as_factor(`Shipping.Mode`), .default = "NA")),
+    `Order.Country` = as.integer(fct_recode(as_factor(`Order.Country`), .default = "NA")),
+    `Customer.Full.Name` = as.integer(fct_recode(as_factor(`Customer.Full.Name`), .default = "NA"))
+  )
+
+
+set.seed(42)
+
+xl <- train_data[, !(names(train_data) == "late_delivery")]
+yl <- train_data$late_delivery
+set_split_late_delivery <- createDataPartition(yl, p = 0.8, list = FALSE)
+xl_train_late_delivery <- xl[set_split_late_delivery, ]
+xl_test_late_delivery <- xl[-set_split_late_delivery, ]
+yl_train <- yl[set_split_late_delivery]
+yl_test <- yl[-set_split_late_delivery]
+
+xl_train <- scale(xl_train_late_delivery)
+xl_test <- scale(xl_test_late_delivery)
+```
+
+```{r,results='markup'}
+classifier_model <- function( model_l, xl_train, xl_test, yl_train, yl_test) {
+
+  
+  model_l <- train(model_l, xl_train, yl_train)
+  
+  
+  yl_pred <- predict(model_l, xl_test)
+  
+
+  
+  accuracy_l <- sum(yl_pred == yl_test) / length(yl_test) * 100
+  
+
+  recall_l <- sum(yl_pred == 1 & yl_test == 1) / sum(yl_test == 1) * 100
+  
+
+  f1_l <- 2 * (recall_l * accuracy_l) / (recall_l + accuracy_l)
+  
+
+  cat("Accuracy of late delivery status is:", accuracy_l, "%\n")
+  cat("Recall score of late delivery status is:", recall_l, "%\n")
+  cat("F1 score of late delivery status is:", f1_l, "%\n")
+}
+
+```
+
+#Model 1: Logistic Regression
+```{r,results='markup'}
+library(caret)
+
+
+model_l <- glm(late_delivery ~ ., data = data.frame(late_delivery = yl_train, xl_train), family = binomial(link = "logit"))
+classifier_model <- function( model_l,  xl_test, yl_test) {
+
+  yl_pred <- predict(model_l, newdata = data.frame(xl_test), type = "response")
+  
+
+  accuracy_l <- sum((yl_pred >= 0.5) == yl_test) / length(yl_test) * 100
+  
+
+  recall_l <- sum((yl_pred >= 0.5) & yl_test == 1) / sum(yl_test == 1) * 100
+  
+
+  f1_l <- 2 * (recall_l * accuracy_l) / (recall_l + accuracy_l)
+  
+
+  cat("Accuracy of late delivery status is:", accuracy_l, "%\n")
+  cat("Recall score of late delivery status is:", recall_l, "%\n")
+  cat("F1 score of late delivery status is:", f1_l, "%\n")
+}
+classifier_model( model_l,xl_test, yl_test)
+
+```
+
+* Among the three algorithms applied, this particular model shows exceptional performance in predicting late delivery status. It achieved a high accuracy of 98.89%, indicating its effectiveness in correctly identifying late deliveries. 
+
+* With a recall score of 100%, it successfully captured all actual late delivery instances, ensuring no late deliveries were misclassified as on-time. 
+
+* The F1 score of 99.44% further underscores its precision and reliability, making it a strong contender among the algorithms evaluated for this task.
+
+
+#Model 2 Naive Bayes
+
+
+```{r,results='markup'}
+
+library(e1071)
+
+model_l <- naiveBayes(yl_train ~ ., data = data.frame(yl_train, xl_train), laplace = 1)
+
+classifier_model <- function( model_l, xl_test, yl_test) {
+
+  yl_pred <- predict(model_l, newdata = data.frame(xl_test))
+  
+
+  accuracy_l <- sum(yl_pred == yl_test) / length(yl_test) * 100
+  
+
+  recall_l <- sum(yl_pred == 1 & yl_test == 1) / sum(yl_test == 1) * 100
+  
+
+  f1_l <- 2 * (recall_l * accuracy_l) / (recall_l + accuracy_l)
+  
+
+  cat("Accuracy of late delivery status is:", accuracy_l, "%\n")
+  cat("Recall score of late delivery status is:", recall_l, "%\n")
+  cat("F1 score of late delivery status is:", f1_l, "%\n")
+}
+
+classifier_model( model_l, xl_test, yl_test)
+```
+
+* This model achieved an exceptionally high recall score of 99.97%, indicating it almost perfectly identified all actual late deliveries, its overall accuracy stands at a much lower 55.24%. 
+
+* This suggests a significant number of false positives (on-time deliveries incorrectly labeled as late). The F1 score, at 71.16%, reflects a better balance between precision and recall than the accuracy suggests, but it also indicates room for improvement, especially in reducing false positives.
+
+
+
+#Model 3 KNN
+
+```{r, results='markup'}
+if (!require(class)) {
+  install.packages("class")
+}
+library(class)
+
+model_l <- knn(xl_train, xl_test, yl_train, k = 1)
+
+classifier_model <- function( model_l, xl_test, yl_test) {
+
+  accuracy_l <- sum(model_l == yl_test) / length(yl_test) * 100
+  
+  recall_l <- sum(model_l == 1 & yl_test == 1) / sum(yl_test == 1) * 100
+  
+
+  f1_l <- 2 * (recall_l * accuracy_l) / (recall_l + accuracy_l)
+  
+
+  cat("Accuracy of late delivery status is:", accuracy_l, "%\n")
+  cat("Recall score of late delivery status is:", recall_l, "%\n")
+  cat("F1 score of late delivery status is:", f1_l, "%\n")
+}
+classifier_model( model_l, xl_test, yl_test)
+```
+
+* The results from applying the KNN algorithm to predict late delivery status show solid performance across metrics. It achieved an accuracy of 84.93%, indicating a high level of correctness in its predictions.
+
+* The recall score of 86.04% demonstrates its effectiveness in identifying a majority of actual late deliveries. The F1 score, at 85.48%, indicates a good balance between precision and recall, suggesting that the model is reliable and consistent in its predictions for this specific task.
+
+
+
+# Conclusion
+
+Considering the performance metrics of the three algorithms – a Logistic Regression model, Naive Bayes, and KNN – in predicting late delivery status, the Logistic Regression model emerges as the best choice. It outperforms the others with an exceptionally high accuracy of 98.89% and a perfect recall score of 100%, indicating its superior capability in correctly identifying both late and on-time deliveries. Its F1 score of 99.44% further confirms its high precision and reliability.
+
+While the Naive Bayes model demonstrated an impressive recall score, its significantly lower accuracy and moderate F1 score suggest a tendency towards false positives, which could be problematic in practical applications. The KNN algorithm, although showing solid and balanced performance across all metrics, doesn't quite match the high standards set by the Logistic Regression model in terms of accuracy and recall.
+
+In summary, the Logistic Regression model, with its outstanding accuracy, perfect recall, and excellent F1 score, is the most reliable and effective choice for predicting late delivery status in this scenario.
+
+
+# References
+* Carbonneau, R., Laframboise, K., & Vahidov, R.(2008). Application of machine learning techniques for supply chain demand forecasting. European Journal of Operational Research, 184(3), 1140-1154.
+
+* Ferreira, K.J., Lee, B.H.A., & Simchi-Levi, D.(2016). Analytics for an online retailer: Demand forecasting and price optimization. Manufacturing & Service Operations Management, 18(1), 69-88.
+
+* Hassan, C.A., Khan M.S., & Shah, M.A.(2018). Comparison of Machine Learning Algorithms in Data classification. 24th International Conference on Automation and Computing (ICAC), Newcastle upon Tyne, United Kingdom, 2018, pp. 1-6.
+
+* Martinez, A., Schmuck, C., Pereverzyev Jr, S., Pirker C., & Haltmeier, M. (2020). A machine learning framework for customer purchase prediction in the non-contractual setting. European ournal of Operational Research, 281(3), 588-596.
+
+* Vakili, M., Ghamsari, M., & Rezaei, M. (2020). Performance Analysis and Comparison of Machine and Deep Learning Algorithms for IoT Data Classification. arXiv preprint arXiv:2001.09636.
+
+* Ahmed, N. K., Atiya, A. F., Gayar, N. E., & El-Shishiny, H. (2010). An Empirical Comparison of Machine Learning Models for Time Series Forecasting. Econometric Reviews, 29(5-6), 594–621.
+
+* Pawar, L., Kumar, R., & Sharma, A. (2018). Risks Analysis and Mitigation Technique in EDA Sector: VLSI Supply Chain. In Analyzing the Role of Risk Mitigation and Monitoring in Software Development (pp. 256-265). IGI Global.
+
+* Tirkolaee, E. B., Sadeghi, S., Mooseloo, F. M., Vandchali, H. R., & Aeini, S. (2021). Application of machine learning in supply chain management: a comprehensive overview of the main areas. Mathematical problems in engineering, 2021, 1-14.
+
+* Lin, H., Lin, J., & Wang, F. (2022). An innovative machine learning model for supply chain management. Journal of Innovation & Knowledge, 7(4), 100276.
+
+* Aamer, A., Eka Yani, L., & Alan Priyatna, I. (2020). Data analytics in the supply chain management: Review of machine learning applications in demand forecasting. Operations and Supply Chain Management: An International Journal, 14(1), 1-13.
